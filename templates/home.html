@@ -1,0 +1,22 @@
+{% extends 'layout.html' %}
+
+{% block title %} Home {% endblock %}
+
+{% block content %}
+
+<div class="row">
+    <div class="col-md-6 col-md-offset-3">
+        <h2>Welcome</h2>
+        {% if session['name'] %}
+        <p>You're logged in as {{ session['name'] }}</p>
+        <br>
+        <div class="form-group">
+            <button onclick="document.location='dashboard'" type="submit" class="btn btn-primary">Dashboard</button>
+        </div>
+        {% else %}
+        <p>Not logged in yet.</p>
+        <p>Please log in.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
