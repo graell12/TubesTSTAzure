@@ -1,28 +1,26 @@
 from flask import Flask, jsonify, request, render_template, redirect, session, make_response, url_for
 from flask_restful import Resource, Api
-from flaskext.mysql import MySQL
 from functools import wraps
 import os
 import bcrypt
 import jwt
 import datetime
+import psycopg2
 
 app=Flask(__name__)
 
 app.config['JSONIFY_PRETTYPRINT_REGULAR'] = True
 
-db = MySQL()
-
-api = Api(app)
-
 SECRET_KEY = os.environ.get('SECRET_KEY') or 'secretxxXx'
 app.config['SECRET_KEY'] = SECRET_KEY
-app.config['MYSQL_DATABASE_USER'] = 'usertst'
-app.config['MYSQL_DATABASE_PASSWORD'] = 'passwordtst'
-app.config['MYSQL_DATABASE_DB'] = 'tst'
-app.config['MYSQL_DATABASE_HOST'] = 'localhost'
+app.config['DATABASE_USER'] = 'feagvrqs'
+app.config['DATABASE_PASSWORD'] = 'nfkB8S2c3Oljs8GTGhq8XC0RKnOG3v4u'
+app.config['DATABASE_DB'] = 'feagvrqs'
+app.config['DATABASE_HOST'] = 'satao.db.elephantsql.com'
 
-db.init_app(app)
+db = psycopg2.connect(host = app.config['DATABASE_HOST'] , database = app.config['DATABASE_DB'], user = app.config['DATABASE_USER'], password = app.config['DATABASE_PASSWORD'])
+
+api = Api(app)
 
 def token_required(f) :
     @wraps(f)
@@ -73,8 +71,7 @@ class View(Resource):
     @token_required
     def get(self):
         try:
-            conn = db.connect()
-            cursor = conn.cursor()
+            cursor = db.cursor()
             cursor.execute("SELECT * FROM MATERNAL_RISK")
             rows = cursor.fetchall()
             return jsonify(rows)
@@ -82,15 +79,13 @@ class View(Resource):
             print(e)
         finally:
             cursor.close()
-            conn.close()
 
 # View data by ID
 class ViewbyID(Resource):
     @token_required
     def post(self):
         try:
-            conn = db.connect()
-            cursor = conn.cursor()
+            cursor = db.cursor()
             get_idmr = request.form['id']
             cursor.execute(f"""SELECT * FROM MATERNAL_RISK WHERE idmr = {get_idmr}""")
             rows = cursor.fetchall()
@@ -99,15 +94,13 @@ class ViewbyID(Resource):
             print(e)
         finally:
             cursor.close()
-            conn.close()
 
 #View data by Risk
 class ViewRisk(Resource):
     @token_required
     def post(self):
         try:
-            conn = db.connect()
-            cursor = conn.cursor()
+            cursor = db.cursor()
             get_risk = request.form['Risk']
             cursor.execute(f"""SELECT * FROM MATERNAL_RISK WHERE RiskLevel = '{get_risk}'""")
             rows = cursor.fetchall()
@@ -116,7 +109,6 @@ class ViewRisk(Resource):
             print(e)
         finally:
             cursor.close()
-            conn.close()
 
 # INsert data to DB
 class Insert(Resource):
@@ -127,8 +119,7 @@ class Insert(Resource):
 
     def post(self):
         try:
-            conn = db.connect()
-            cursor = conn.cursor()
+            cursor = db.cursor()
             _womanage = int(request.form['Age'])
             _systolicbp = int(request.form['SystolicBP'])
             _diastolicbp = int(request.form['DiastolicBP'])
@@ -138,7 +129,7 @@ class Insert(Resource):
             _risk = request.form['RiskLevel']
             insertval = f"""INSERT INTO maternal_risk(WomenAge, SystolicBP, DiastolicBP, BS, BodyTemp, HeartRate, RiskLevel) VALUES({_womanage}, {_systolicbp}, {_diastolicbp}, {_bs}, {_bodytemp}, {_heartrate}, '{_risk}')"""
             cursor.execute(insertval)
-            conn.commit()
+            db.commit()
             response = jsonify(message='Data added to the dataset successfully.', id=cursor.lastrowid)
             response.status_code = 200
         except Exception as e:
@@ -147,7 +138,6 @@ class Insert(Resource):
             response.status_code = 400
         finally:
             cursor.close()
-            conn.close()
             return response
 
 # Update data to DB
@@ -159,8 +149,7 @@ class Update(Resource):
 
     def post(self):
         try:
-            conn = db.connect()
-            cursor = conn.cursor()
+            cursor = db.cursor()
             up_idmr = int(request.form['id'])
             _womenage = request.form['Age']
             _systolicbp = int(request.form['SystolicBP'])
@@ -171,7 +160,7 @@ class Update(Resource):
             _risk = request.form['RiskLevel']
             updateval = f"""UPDATE MATERNAL_RISK SET WomenAge = {_womenage}, SystolicBP = {_systolicbp}, DiastolicBP = {_diastolicbp}, BS = {_bs}, BodyTemp = {_bodytemp}, HeartRate = {_heartrate}, RiskLevel = '{_risk}' WHERE IDMR = {up_idmr}"""      
             cursor.execute(updateval)
-            conn.commit()
+            db.commit()
             response = jsonify(message='Data in the dataset updated successfully.', id=cursor.lastrowid)
             response.status_code = 200
         except Exception as e:
@@ -180,7 +169,6 @@ class Update(Resource):
             response.status_code = 400
         finally:
             cursor.close()
-            conn.close()
             return(response)
 
 # Delete data from DB
@@ -192,12 +180,11 @@ class Delete(Resource):
 
     def post(self):
         try:
-            conn = db.connect()
-            cursor = conn.cursor()
+            cursor = db.cursor()
             del_idmr = int(request.form['id'])
             delval = f"""DELETE FROM MATERNAL_RISK WHERE IDMR = {del_idmr}"""
             cursor.execute(delval)
-            conn.commit()
+            db.commit()
             response = jsonify(message='Data in the dataset deleted successfully.', id=cursor.lastrowid)
             response.status_code = 200
         except Exception as e:
@@ -206,7 +193,6 @@ class Delete(Resource):
             response.status_code = 400
         finally:
             cursor.close()
-            conn.close()
             return(response)
 
 # Register Account
@@ -223,12 +209,11 @@ class Register(Resource) :
         return make_response(render_template('register.html'), 200, headers)
 
     def post(self):
-        conn = db.connect()
-        cursor = conn.cursor()
+        cursor = db.cursor()
         try :
             username = request.form['username']
             password = request.form['password']
-            if (username is None or password is None):
+            if (username == "" or password == ""):
                 response = jsonify('Please provide both username and password.')
                 response.status_code = 400
                 return response
@@ -250,8 +235,8 @@ class Register(Resource) :
             # insert new user into db
             salt = bcrypt.gensalt()
             hashed_password = bcrypt.hashpw(password.encode('utf-8'), salt)
-            cursor.execute("INSERT INTO USERS (username, password) VALUES (%s, %s)", (username, hashed_password))
-            conn.commit()
+            cursor.execute("INSERT INTO USERS (username, password) VALUES (%s, %s)", (username, hashed_password.decode('utf-8')))
+            db.commit()
             response = jsonify('User registered successfully.')
             response.status_code = 201
             # headers = {'Content-Type': 'text/html'}
@@ -262,7 +247,6 @@ class Register(Resource) :
             response.status_code = 400
         finally:
             cursor.close()
-            conn.close()
 
 # Login Account
 class Login(Resource):
@@ -271,44 +255,43 @@ class Login(Resource):
         return make_response(render_template('login.html'), 200, headers)
 
     def post(self):
-        conn = db.connect()
-        cursor = conn.cursor()
+        cursor = db.cursor()
         try:
             username = request.form['username']
             password = request.form['password']
-            if (username is None or password is None):
+            if (username == "" or password == ""):
                 response = jsonify('Please provide both username and password.')
                 response.status_code = 400
                 return response
 
             # check if username is in db
             cursor.execute(f"""SELECT * FROM USERS WHERE username = '{username}'""")
-            rows = cursor.fetchall()
+            rows = cursor.fetchone()
             if len(rows) == 0:
                 response = jsonify('Username does not exist.')
                 response.status_code = 400
                 return response
 
             # check if password is correct
-            if bcrypt.checkpw(password.encode('utf-8'), rows[0][2].encode('utf-8')):
+            if bcrypt.checkpw(password.encode('utf-8'), rows[2].encode('utf-8')):
                 token = jwt.encode({'username': username, 'exp' : datetime.datetime.utcnow() + datetime.timedelta(minutes=30)}, app.config['SECRET_KEY'])
                 response = jsonify(message = 'User logged in successfully.', token = token)
                 session['name'] = username
                 session['token'] = token
                 # create token for user
                 response.status_code = 200
+                print(response)
                 return redirect(url_for("dashboard"))         
             else:
                 response = jsonify('Incorrect password.')
                 response.status_code = 400
                 return response
-        except Exception as e:
-            print(e)
-            response = jsonify(message = 'Failed to add data to the dataset.', error = str(e))
+        except :
+            response = jsonify(message = 'Failed to add data to the dataset.')
             response.status_code = 400
+            return response
         finally:
             cursor.close()
-            conn.close()
 
 # Logout
 class Logout(Resource):
@@ -336,4 +319,4 @@ api.add_resource(Update, '/update')
 api.add_resource(Delete, '/delete')
 
 if __name__=="__main__":
-    app.run(debug=True)
+    app.run(debug=True, host="0.0.0.0", port=5002)
