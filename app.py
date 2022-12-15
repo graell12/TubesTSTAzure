@@ -1,6 +1,7 @@
 from flask import Flask, jsonify, request, render_template, redirect, session, make_response, url_for
 from flask_restful import Resource, Api
 from functools import wraps
+import requests
 import os
 import bcrypt
 import jwt
@@ -22,6 +23,7 @@ db = psycopg2.connect(host = app.config['DATABASE_HOST'] , database = app.config
 
 api = Api(app)
 
+# Check token
 def token_required(f) :
     @wraps(f)
     def decorated(*args, **kwargs) :
@@ -110,7 +112,7 @@ class ViewRisk(Resource):
         finally:
             cursor.close()
 
-# INsert data to DB
+# Insert data to DB
 class Insert(Resource):
     @token_required
     def get(self):
@@ -280,18 +282,19 @@ class Login(Resource):
                 session['token'] = token
                 # create token for user
                 response.status_code = 200
-                print(response)
+                if username == "pavita":
+                    return jsonify(token)
                 return redirect(url_for("dashboard"))         
             else:
                 response = jsonify('Incorrect password.')
                 response.status_code = 400
                 return response
         except :
-            response = jsonify(message = 'Failed to add data to the dataset.')
+            response = jsonify(message = 'Fail to log in.')
             response.status_code = 400
             return response
         finally:
-            cursor.close()
+            cursor.close()    
 
 # Logout
 class Logout(Resource):
@@ -301,8 +304,95 @@ class Logout(Resource):
         return make_response(render_template('home.html'), 200, headers)
 
 # Core
-# class Core(Resource):
-#     def get(self):
+class Core(Resource):
+    @token_required
+    def get(self):
+        headers = {'Content-Type': 'text/html'}
+        return make_response(render_template('core.html'), 200, headers)
+
+    def post(self):
+        womanage = request.form['Age']
+        risk = request.form['Risk']
+        # Predict compatible age match to woman based on some traits based on their age and maternal risk
+        url = 'https://tubeststpav.azurewebsites.net/grey/' + str(womanage)
+        jsonresp = requests.get(url).json()
+        fertile = filter(lambda x: x[4] == "Normal", jsonresp) # filter out infertile ones
+        listage = []
+        result = []
+        respmsg = ""
+        if risk == "high risk":
+            # no alcohol and no smoking
+            temp = filter(lambda x: x[2] == "hardly ever or never", fertile) # alcohol filter
+            result = filter(lambda x: x[3] == "never", temp) # smoking filter
+            respmsg = f"""For woman with high maternal risk, it is better to find man who hardly ever or never drink alcohol and never smoke."""
+        elif risk == "mid risk":
+            # alcohol once a week is still acceptable, smocking occasionally is still acceptable
+            temp = filter(lambda x: x[2] == "hardly ever or never" or x[2] == "once a week", fertile) # alcohol filter
+            result = filter(lambda x: x[3] == "never" or x[3] == "occasional", temp) # smoking filter
+            respmsg = f"""For woman with mid maternal risk, it is better to find man who hardly ever or never drink, but drinking once a week is still tolerable. Also, smoking occasionally is still tolerable."""
+        elif risk == "low risk":
+            # as long as the alcohol consumption is not every day
+            result = filter(lambda x : x[2] != "several times a day" or x[2] != "every day", fertile)
+            respmsg = f"""For woman with low maternal risk, it is okay as long as the alcohol consumption is not every day."""
+        print(result)
+        for man in result:
+            listage.append(man[1])
+            print(man)
+        maxage = max(listage, default=0)
+        minage = min(listage, default=0)
+        if(minage == 0 or maxage == 0):
+            respmsg = "Sorry, reccomendation for woman this age is not available"
+        response = jsonify(message = respmsg, minimal_age = minage, maximal_age = maxage)
+        response.status_code = 200
+        return response
+
+
+# API connected with friend
+class Pavita(Resource):
+    def get(self, risk):
+        # blood pressure data
+        cursor = db.cursor()
+        sysup = 0
+        sysdown = 0
+        diasup = 0
+        diasdown = 0
+        searchval = ""
+        risk = risk.replace("-", " ")
+        if risk == 'low risk':
+            # normal bp
+            sysup = 120
+            sysdown = 90
+            diasup = 80
+            diasdown = 60
+        elif risk == "mid risk":
+            # pre-high bp
+            sysup = 140
+            sysdown = 120
+            diasup = 90
+            diasdown = 80
+        elif risk == "high risk":
+            # high and low blood pressure
+            sysup = 190
+            sysdown = 140
+            diasup = 100
+            diasdown = 90
+            sysuplow = 90
+            sysdownlow = 70
+            diasuplow = 60
+            diasdownlow = 40
+            searchval = f"""SELECT SystolicBP, DiastolicBP, RiskLevel FROM maternal_risk WHERE (SystolicBP BETWEEN {sysdown} AND {sysup} AND DiastolicBP BETWEEN {diasdown} AND {diasup}) OR (SystolicBP BETWEEN {sysdownlow} AND {sysuplow} AND DiastolicBP BETWEEN {diasdownlow} AND {diasuplow}) AND RiskLevel = '{risk}'"""
+        if risk != "high risk":
+            searchval = f"""SELECT SystolicBP, DiastolicBP, RiskLevel FROM maternal_risk WHERE SystolicBP BETWEEN {sysdown} AND {sysup} AND DiastolicBP BETWEEN {diasdown} AND {diasup} AND RiskLevel = '{risk}'"""
+        try :
+            cursor.execute(searchval)
+            rows = cursor.fetchall()
+            return jsonify(rows)
+        except Exception as e :
+            response = jsonify(message = 'Failed to fetch data in the dataset.')
+            response.status_code = 400
+            return response
+        finally:
+            cursor.close()
 
 # API Resource Routes
 api.add_resource(Login, '/login')
@@ -317,6 +407,9 @@ api.add_resource(ViewbyID, '/view-id')
 api.add_resource(Insert, '/insert')
 api.add_resource(Update, '/update') 
 api.add_resource(Delete, '/delete')
+api.add_resource(Pavita, '/pavita/<string:risk>')
+# api.add_resource(Core, '/core/<string:risk>/<int:womanage>')
+api.add_resource(Core, '/core')
 
 if __name__=="__main__":
     app.run(debug=True, host="0.0.0.0", port=5002)
